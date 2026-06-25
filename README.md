@@ -4,7 +4,8 @@ A local-first literary magazine submission tracker for macOS. Track submission c
 
 No cloud account, no subscription, no database to manage. The app reads and writes two Markdown files on your disk.
 
-![Courier screenshot placeholder](docs/screenshot.png)
+<img width="2600" height="1800" alt="2026-06-24 21 59 58" src="https://github.com/user-attachments/assets/8c00856a-ef20-4765-89ef-e69f59a0bf84" />
+
 
 ## Features
 
