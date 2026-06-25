@@ -111,12 +111,18 @@ struct ResolveResult {
     review_note: Option<String>,
 }
 
+/// One result row from the pi-powered summary fetcher (scripts/fetch-summaries.mjs).
+#[derive(serde::Deserialize)]
+struct SummaryResult {
+    name: String,
+    summary: Option<String>,
+}
+
 /// Resolve submission windows by piping the filtered entries to the Node worker,
 /// which runs the multi-model ensemble (Gemini + Haiku, qwen offline fallback)
 /// and prints structured JSON. Rust stays the sole writer of magazines.md.
 async fn resolve_via_pi(entries: &[Magazine]) -> Result<Vec<ResolveResult>, String> {
     use serde_json::json;
-    use tokio::io::AsyncWriteExt;
 
     let input: Vec<_> = entries.iter().map(|m| json!({
         "name": m.name,
@@ -124,6 +130,7 @@ async fn resolve_via_pi(entries: &[Magazine]) -> Result<Vec<ResolveResult>, Stri
         "submit_info": m.submit_info,
         "external_submit_url": m.external_submit_url,
         "guidelines": m.guidelines,
+        "homepage": m.homepage,
     })).collect();
     let input_str = serde_json::to_string(&input).map_err(|e| format!("serialize entries: {}", e))?;
 
@@ -131,10 +138,42 @@ async fn resolve_via_pi(entries: &[Magazine]) -> Result<Vec<ResolveResult>, Stri
     let mut script = root.clone();
     script.push("scripts");
     script.push("resolve-deadlines.mjs");
+    resolve_via_pi_inner(&root, &script, &input_str).await
+}
+
+/// Fetch one-line magazine summaries for entries that lack one.
+async fn fetch_summaries_via_pi(entries: &[Magazine]) -> Result<Vec<SummaryResult>, String> {
+    use serde_json::json;
+
+    // Dedupe by name — one summary per magazine, not per call.
+    let mut seen = std::collections::HashSet::new();
+    let unique: Vec<_> = entries
+        .iter()
+        .filter(|m| !m.homepage.is_empty() && seen.insert(m.name.clone()))
+        .map(|m| json!({ "name": m.name, "homepage": m.homepage }))
+        .collect();
+    if unique.is_empty() {
+        return Ok(Vec::new());
+    }
+    let input_str = serde_json::to_string(&unique).map_err(|e| format!("serialize summaries: {}", e))?;
+
+    let root = project_root();
+    let mut script = root.clone();
+    script.push("scripts");
+    script.push("fetch-summaries.mjs");
+    resolve_via_pi_inner(&root, &script, &input_str).await
+}
+
+async fn resolve_via_pi_inner<T: serde::de::DeserializeOwned>(
+    root: &std::path::PathBuf,
+    script: &std::path::PathBuf,
+    input_str: &str,
+) -> Result<Vec<T>, String> {
+    use tokio::io::AsyncWriteExt;
 
     let mut child = tokio::process::Command::new("node")
-        .arg(&script)
-        .current_dir(&root)
+        .arg(script)
+        .current_dir(root)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
@@ -148,11 +187,11 @@ async fn resolve_via_pi(entries: &[Magazine]) -> Result<Vec<ResolveResult>, Stri
     }
 
     let output = tokio::time::timeout(
-        std::time::Duration::from_secs(120),
+        std::time::Duration::from_secs(200),
         child.wait_with_output()
     )
     .await
-    .map_err(|_| "resolver timeout (>2min) — check for stuck processes".to_string())?
+    .map_err(|_| "resolver timeout (>3min) — check for stuck processes".to_string())?
     .map_err(|e| format!("wait resolver: {}", e))?;
     if !output.status.success() {
         return Err(format!("resolver exited with {}", output.status));
@@ -253,7 +292,7 @@ pub async fn refresh_magazines(force: bool) -> Result<Vec<Magazine>, String> {
     // have edited entries (in-app or by hand) while we were scraping; merging
     // by (name, call_name) preserves those edits instead of clobbering them.
     let now = chrono::Utc::now().to_rfc3339();
-    let (mut fresh, changed) = {
+    let (_fresh, changed) = {
         let _g = write_lock().lock().map_err(|e| format!("lock: {}", e))?;
         let (mut fresh, trailing) = parse_magazines_md()?;
         let mut changed = false;
@@ -284,6 +323,48 @@ pub async fn refresh_magazines(force: bool) -> Result<Vec<Magazine>, String> {
     if changed {
         spawn_mobile_sync();
     }
+
+    // ---- Pass 2: fetch magazine summaries for any entry that lacks one ----
+    // Summaries are fetched once and cached indefinitely (no 7-day expiry).
+    // We re-parse so we're always working from the latest written state.
+    let (mut fresh, _) = parse_magazines_md()?;
+    let needing_summary: Vec<Magazine> = fresh
+        .iter()
+        .filter(|m| m.scraped_summary.is_none() && !m.homepage.is_empty())
+        .cloned()
+        .collect();
+
+    if !needing_summary.is_empty() {
+        println!("[Courier] Fetching summaries for {} magazine(s)", {
+            let mut seen = std::collections::HashSet::new();
+            needing_summary.iter().filter(|m| seen.insert(&m.name)).count()
+        });
+        // Non-fatal: a summary failure just leaves the field null.
+        match fetch_summaries_via_pi(&needing_summary).await {
+            Ok(summary_results) => {
+                let _g = write_lock().lock().map_err(|e| format!("lock: {}", e))?;
+                let (mut latest, trailing) = parse_magazines_md()?;
+                let mut summary_changed = false;
+                for r in summary_results {
+                    let Some(summary) = r.summary else { continue };
+                    // Write to ALL entries from this magazine (all calls share one blurb).
+                    for m in latest.iter_mut() {
+                        if m.name == r.name && m.scraped_summary.is_none() {
+                            m.scraped_summary = Some(summary.clone());
+                            summary_changed = true;
+                        }
+                    }
+                }
+                if summary_changed {
+                    atomic_write(&magazines_md_path(), &emit_magazines_md(&latest, &trailing))?;
+                    spawn_mobile_sync();
+                    fresh = latest;
+                }
+            }
+            Err(e) => eprintln!("[Courier] summary fetch failed (non-fatal): {}", e),
+        }
+    }
+
     assign_ids_and_compute(&mut fresh);
     Ok(fresh)
 }

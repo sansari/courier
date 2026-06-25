@@ -44,6 +44,8 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
   `run-dev.sh`, and `README.md` updated accordingly.
 
 ### Added
+- CI smoke test: builds the web frontend with example data and verifies the page loads. Removed the old GitHub Pages deploy workflow.
+- Magazine summary blurbs on hover: refresh now fetches each magazine's homepage/masthead and generates a 1–2 sentence description via AI, stored as `scraped_summary` in magazines.md. Summaries are fetched once and cached indefinitely. The HoverCard on the magazine name now displays this summary (above any user notes).
 - `needs_review` / `review_note` fields on magazine entries, surfaced as a ⚠️ in
   the table (desktop + mobile) and in the phone JSON. Set when the model reports
   low confidence (or a result came from the local fallback); cleared on a

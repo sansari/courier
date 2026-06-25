@@ -19,7 +19,7 @@ function saveOverrides(mag, overrides) {
   });
 }
 
-function HoverCard({ children, notes, detailsUrl, onEdit }) {
+function HoverCard({ children, notes, summary, detailsUrl, onEdit }) {
   const [visible, setVisible] = useState(false);
   const timerRef = useRef(null);
 
@@ -37,6 +37,7 @@ function HoverCard({ children, notes, detailsUrl, onEdit }) {
           onMouseEnter={show}
           onMouseLeave={hide}
         >
+          {summary && <p className="text-sm text-[#575653] mb-2 whitespace-pre-wrap">{summary}</p>}
           {notes && <p className="text-sm text-[#575653] italic mb-2 whitespace-pre-wrap">{notes}</p>}
           <div className="flex gap-2">
             <a
@@ -414,6 +415,7 @@ export default function MagazineTable({ magazines, onRefreshNeeded, allStories, 
                 <td className="px-4 py-2 whitespace-nowrap">
                   <HoverCard
                     notes={mag.notes}
+                    summary={mag.scraped_summary}
                     detailsUrl={mag.homepage}
                     onEdit={() => setModal({ mag, field: 'name' })}
                   >

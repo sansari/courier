@@ -1,0 +1,35 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  web-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - run: npm ci
+
+      - name: Seed example data
+        run: |
+          cp magazines.example.md magazines.md
+          cp stories.example.md stories.md
+
+      - name: Build web frontend
+        run: npm run build:web
+
+      - name: Serve and verify
+        run: |
+          npx serve dist --listen 3000 &
+          sleep 2
+          curl -sf http://localhost:3000 | grep -q "Courier" && echo "PASS: page loaded" || (echo "FAIL: expected content missing" && exit 1)

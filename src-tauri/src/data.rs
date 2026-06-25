@@ -46,6 +46,7 @@ pub struct Magazine {
     pub custom_guidelines: Option<String>,
     pub scraped_deadline: Option<String>,
     pub scraped_at: Option<String>,
+    pub scraped_summary: Option<String>,
     // Set by the resolver when the two cloud models disagree (or only one
     // answered): the scraped_deadline is a best guess and a human should
     // verify it. Cleared on a refresh that reaches consensus.
