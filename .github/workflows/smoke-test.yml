@@ -28,8 +28,8 @@ jobs:
       - name: Build web frontend
         run: npm run build:web
 
-      - name: Serve and verify
+      - name: Verify output
         run: |
-          npx serve dist --listen 3000 &
-          sleep 2
-          curl -sf http://localhost:3000 | grep -q "Courier" && echo "PASS: page loaded" || (echo "FAIL: expected content missing" && exit 1)
+          grep -q "Courier" dist/index.html && echo "PASS: index.html contains Courier" || (echo "FAIL: index.html missing expected content" && exit 1)
+          test -f public/magazines.json && echo "PASS: magazines.json generated" || (echo "FAIL: magazines.json missing" && exit 1)
+          test -f public/stories.json && echo "PASS: stories.json generated" || (echo "FAIL: stories.json missing" && exit 1)
