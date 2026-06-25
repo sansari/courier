@@ -1,0 +1,10 @@
+{
+  "identifier": "main-capability",
+  "description": "Main window capabilities",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "shell:allow-open"
+  ]
+}

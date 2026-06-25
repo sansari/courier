@@ -1,0 +1,9 @@
+{
+  "name": "Courier",
+  "short_name": "Courier",
+  "description": "Literary magazine submission deadline tracker",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#FFFCF0",
+  "theme_color": "#205EA6"
+}
